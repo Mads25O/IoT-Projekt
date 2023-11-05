@@ -252,7 +252,7 @@ def startup():
     get_adafruit_gps()
 
     acceleration = imu.accel
-    print("imu pos: ", acceleration.y)
+    akse_pos()
     print("boot mqtt.besked", mqtt.besked)
     mqtt.web_print("type 'rdy' when ready")
     while(mqtt.besked != "rdy"):
