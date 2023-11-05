@@ -3,7 +3,7 @@ from imu import MPU6050                # importere MPU6050 klassen fra imu.py i 
 from time import sleep                 # importering af sleep fra time modulet så vi kan pause koden med sleep() """
 from machine import ADC, I2C, Pin, UART, PWM     # import af I2C, Pin, UART, ADC og PWM så vi kan bruge I2C og Pins fra esp32 """
 from neopixel import NeoPixel          # import af neopixel
-
+import sys
 import umqtt_robust2 as mqtt
 from gps_bare_minimum import GPS_Minimum
 
@@ -37,10 +37,10 @@ gps_speed = 9600
 
 #batteri config
 pin_adc_bat = 34
-bat_scaling = 4.2 / 2
+bat_scaling = 3.88 / 1100
 
 # Declare pins
-pwm_pins = [32,33]
+pwm_pins = [32,4]
 # Setup pins for PWM
 pwms = [PWM(Pin(pwm_pins[RED])),PWM(Pin(pwm_pins[GREEN]))]
 # Set pwm frequency
@@ -75,7 +75,7 @@ def set_color(r, g, b):             # set_color functionen fra øvelse 3.2 i pro
 def read_battery_voltage():
     adc_val = bat_adc.read()
     voltage = bat_scaling * adc_val / 4095 * 3.3
-#     print("ADC Value: ",adc_val)
+    print("ADC Value: ",adc_val)
     return voltage
 
 #""" funktion til at beregne den gennemsnitlige spænding over 512 målinger
@@ -84,12 +84,13 @@ def read_battery_voltage_avg64():
     for i in range(512):
         adc_val += bat_adc.read()      
     voltage = bat_scaling * (adc_val >> 9)
-    
-    min_uvolt = 3200
-    max_uvolt = 4050
+    print(adc_val >> 9)
+    print(voltage)
+    min_uvolt = 3000
+    max_uvolt = 4200
     volt_procent = voltage * 1000
     global percentage_of_battery
-    percentage_of_battery = int(((volt_procent-min_uvolt)/(max_uvolt-min_uvolt) * 100) / 10000)
+    percentage_of_battery = int(((volt_procent-min_uvolt)/(max_uvolt-min_uvolt) * 100))
     if percentage_of_battery > 100:
         percentage_of_battery = 100
         
@@ -110,9 +111,20 @@ def read_battery_voltage_avg64():
     elif percentage_of_battery < 0:
         percentage_of_battery = 0
         
+    
+        
         
     print("Procent: ",percentage_of_battery,"%")
     sleep(0.1)
+    if percentage_of_battery < 10:
+        for i in range (5):
+            set_color(int(255/4), 0, 0)
+            sleep(1)
+            set_color(0, 0, int(255/4))
+            sleep(1)
+            set_color(0,0,0)
+        
+        sys.exit()
     return voltage
 
 
@@ -139,20 +151,19 @@ def akse_pos():
 def get_adafruit_gps():
     speed = lat = lon = None # Opretter variabler med None som værdi
     if gps.receive_nmea_data():
-        """ hvis der er kommet end bruggbar værdi på alle der skal anvendes """
+        # hvis der er kommet end bruggbar værdi på alle der skal anvendes
         if gps.get_speed() != -999 and gps.get_latitude() != -999.0 and gps.get_longitude() != -999.0 and gps.get_validity() == "A":
-            """ gemmer returværdier fra metodekald i variabler """
-            speed =str(gps.get_speed()/3.6)
+            # gemmer returværdier fra metodekald i variabler
+            speed =str(gps.get_speed())
             lat = str(gps.get_latitude())
             lon = str(gps.get_longitude())
-            """ returnerer data med adafruit gps format """
+            # returnerer data med adafruit gps format
             return speed + "," + lat + "," + lon + "," + "0.0"
         else: # hvis ikke både hastighed, latitude og longtitude er korrekte 
             print(f"GPS data to adafruit not valid:\nspeed: {speed}\nlatitude: {lat}\nlongtitude: {lon}")
             return False
     else:
         return False
-
 
 #"""funktion der kører en animation på neopixel som køre op fra pix 0 og 11 til 5 og 6. derefter kører den ned igen"""   
 def anim(r,g,b):
@@ -178,13 +189,14 @@ def neopixel_thread(dummy):
         acceleration = imu.accel        # definerer variablen acceleration til acceleration opfanget af imu'en  """
     
 #"""hvis accelerationens absolute værdi (værdien med fjernet fortegn. Så hvis værdien var negativ er den nu positiv.) er mindre en 0.3 OG vores tackle_state fortæller vi ikke er tacklet. så skal blokken kører"""
-        if abs(acceleration.y) < 0.3 and tackle_state == False:
-       
+        if abs(acceleration.y) < 0.25 and tackle_state == False:
             tackle_state = True                                 # ændre vores tackle_state til at vi er tacklet """
             print("tackling fundet")                            # printer i shell 'tackling fundet' så vi kan se at det er registreret """
+            
             tackle_count += 1                                   # lægger 1 til vores tackle_count """
             print(tackle_count)                                 # printer tackle_count så vi kan se den har talt tacklingen """
             sleep(2)
+            
    
         
         if tackle_count < 10:
@@ -197,12 +209,15 @@ def neopixel_thread(dummy):
   
   # GPS HASTIGHED 
         if gps.get_speed() > 0:
-            speed = int(gps.get_speed()/3.6)
+            speed_led = int(gps.get_speed()/3.6)            
             
-            
-            for i in range (speed):
+            for i in range (speed_led):
                 neo_obj_speed[i] = (1*i, 21*i, 0)
                 neo_obj_speed.write()
+                
+            sleep(1)
+            neo_obj_speed[i] = (0,0,0)
+            neo_obj_speed.write()
                 
         else:
             pass
@@ -222,12 +237,41 @@ def neopixel_thread(dummy):
             sleep(2)                                             # venter 2 sekunder da 
 
 
+def startup():
+    read_battery_voltage()
+    read_battery_voltage_avg64()
+    
+    
+    
+    print("tænder op")
+
+    read_battery_voltage_avg64()
+
+    print("running startup")
+
+    get_adafruit_gps()
+
+    acceleration = imu.accel
+    print("imu pos: ", acceleration.y)
+    print("boot mqtt.besked", mqtt.besked)
+    mqtt.web_print("type 'rdy' when ready")
+    while(mqtt.besked != "rdy"):
+        sleep(1)
+        print("boot mqtt.besked", mqtt.besked)
+        if len(mqtt.besked) != 0: # Her nulstilles indkommende beskeder
+            mqtt.besked = ""            
+        mqtt.sync_with_adafruitIO() # igangsæt at sende og modtage data med Adafruit IO             
+        print(".", end = '') # printer et punktum til shell, uden et enter
+        
+    
 
 
 ###### Programmer ######
+startup()
 _thread.start_new_thread(neopixel_thread, (1,))        
 while True:    
     read_battery_voltage_avg64()
+    
    
    #""" program der tager data fra gps funktionen og sender til adafruit hvis der er signal """
     try:
@@ -276,3 +320,5 @@ while True:
         print('Ctrl-C pressed...exiting')
         mqtt.c.disconnect()
         mqtt.sys.exit()
+
+
