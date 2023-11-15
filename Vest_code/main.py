@@ -306,7 +306,7 @@ while True:
                 set_color(100, 50, 0)
                 sleep(1)
                 set_color(0,0,0)
-            exit()
+            sys.exit()
      
          
          
